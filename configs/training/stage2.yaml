@@ -1,0 +1,55 @@
+# Omni-ST Training Configuration — Stage 2: Cross-Modal Alignment
+# CLIP-style contrastive learning across all modality pairs
+
+stage: 2
+name: cross_modal_alignment
+
+training:
+  num_epochs: 50
+  batch_size: 256
+  learning_rate: 3.0e-4
+  weight_decay: 0.01
+  grad_clip: 1.0
+  warmup_steps: 1000
+  use_amp: true
+  grad_accum_steps: 2
+  early_stop_patience: 15
+
+optimizer:
+  type: AdamW
+  betas: [0.9, 0.98]
+  eps: 1.0e-6
+
+scheduler:
+  type: cosine_with_warmup
+  min_lr: 1.0e-6
+
+loss:
+  type: multimodal_alignment
+  temperature: 0.07
+  learnable_temp: true
+  pair_weights:
+    image_gene: 1.0
+    image_text: 0.5
+    gene_text: 0.5
+    image_graph: 0.5
+    gene_graph: 0.5
+
+modalities_active:
+  - image
+  - gene
+  - text
+  - graph
+
+checkpoint:
+  save_dir: checkpoints/stage2
+  save_every_n_epochs: 5
+
+wandb:
+  project: omni-st
+  name: stage2-alignment
+  tags: [stage2, contrastive, clip]
+
+defaults:
+  - model: default
+  - dataset: visium

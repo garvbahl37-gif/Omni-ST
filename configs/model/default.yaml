@@ -1,0 +1,67 @@
+# Omni-ST Default Model Configuration
+# Loaded by Hydra: `python train.py model=default`
+
+model:
+  # ── Image Encoder ──────────────────────────────────────────────────────────
+  image_encoder:
+    arch: vit                         # "vit" or "swin"
+    model_name: vit_base_patch16_224  # timm identifier
+    pretrained: true
+    output_dim: 512
+    freeze_backbone: false
+    dropout: 0.1
+
+  # ── Gene Encoder ───────────────────────────────────────────────────────────
+  gene_encoder:
+    num_genes: 33538
+    embed_dim: 256
+    output_dim: 512
+    num_layers: 6
+    num_heads: 8
+    max_genes: 2048
+    dropout: 0.1
+
+  # ── Graph Encoder ──────────────────────────────────────────────────────────
+  graph_encoder:
+    node_in_dim: 50                   # PCA components
+    coord_dim: 2
+    embed_dim: 256
+    output_dim: 512
+    num_layers: 4
+    num_heads: 4
+    gnn_type: gat                     # "gat" or "transformer"
+    pool: attention
+    dropout: 0.1
+
+  # ── Text Encoder ────────────────────────────────────────────────────────────
+  text_encoder:
+    model_name: dmis-lab/biobert-base-cased-v1.2
+    output_dim: 512
+    pool_strategy: cls
+    freeze_backbone: false
+    max_length: 256
+    dropout: 0.1
+
+  # ── Multimodal Backbone ─────────────────────────────────────────────────────
+  backbone:
+    embed_dim: 512
+    num_layers: 8
+    num_heads: 8
+    num_register_tokens: 4
+    dropout: 0.1
+    modality_dims:
+      image: 512
+      gene: 512
+      graph: 512
+      text: 512
+      instruction: 512
+
+  # ── Instruction Adapter ─────────────────────────────────────────────────────
+  instruction_adapter:
+    instruction_dim: 512
+    embed_dim: 512
+    num_backbone_layers: 8
+    num_heads: 8
+    strategy: cross_attn              # "prefix", "cross_attn", or "lora"
+    num_prefix_tokens: 8
+    lora_rank: 8

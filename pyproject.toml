@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "omni-st"
+version = "0.1.0"
+description = "Instruction-Driven Any-to-Any Multimodal Modeling for Spatial Transcriptomics"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Omni-ST Team" },
+]
+keywords = [
+    "spatial transcriptomics",
+    "multimodal learning",
+    "deep learning",
+    "computational pathology",
+    "instruction tuning",
+    "foundation model",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+[project.urls]
+Homepage = "https://github.com/omni-st/omni-st"
+Documentation = "https://omni-st.readthedocs.io"
+Repository = "https://github.com/omni-st/omni-st"
+Issues = "https://github.com/omni-st/omni-st/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["omni_st*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=omni_st --cov-report=term-missing"

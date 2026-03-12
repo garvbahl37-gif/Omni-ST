@@ -1,0 +1,70 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+.eggs/
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environments
+.venv/
+venv/
+env/
+.env
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# Data files — DO NOT commit large datasets
+data/
+*.h5ad
+*.h5
+*.hdf5
+*.csv
+*.tsv
+*.loom
+*.zarr/
+*.parquet
+
+# Model checkpoints
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+
+# Logs & Experiments
+wandb/
+mlruns/
+lightning_logs/
+outputs/
+*.log
+logs/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Hydra outputs
+outputs/
+multirun/
+.hydra/
+
+# Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Build
+*.whl
+site/
