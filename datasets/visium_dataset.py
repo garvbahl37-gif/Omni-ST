@@ -14,6 +14,7 @@ Supports:
 from __future__ import annotations
 
 import os
+import platform
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
@@ -97,7 +98,9 @@ class VisiumDataset(Dataset):
         # Subselect spots
         if max_spots is not None:
             idx = np.random.choice(len(self.adata), min(max_spots, len(self.adata)), replace=False)
-            self.adata = self.adata[idx]
+            # BUG FIX: AnnData view after fancy indexing must be .copy()'d to
+            # avoid silent view-mutation bugs and ensure a concrete object.
+            self.adata = self.adata[idx].copy()
 
         self.instruction_text = instruction or self.TASK_INSTRUCTIONS.get(task, "")
         self._validate()
@@ -136,23 +139,38 @@ class VisiumDataset(Dataset):
     def _get_expression(self, idx: int) -> torch.Tensor:
         """Return log-normalised expression vector [G]."""
         expr = self.adata.X[idx]
+        # BUG FIX: sparse matrix row-slice returns a (1, G) matrix.
+        # .toarray() gives shape [1, G]; [0] reduces to [G].
+        # np.squeeze() is unsafe when G==1 (drops the gene dim entirely).
         if hasattr(expr, "toarray"):
-            expr = expr.toarray().squeeze()
-        return torch.tensor(expr, dtype=torch.float32)
+            expr = expr.toarray()[0]      # always shape [G]
+        elif isinstance(expr, np.matrix):
+            expr = np.asarray(expr).flatten()
+        return torch.tensor(np.array(expr).flatten(), dtype=torch.float32)
 
     def _get_label(self, idx: int) -> Optional[torch.Tensor]:
         """Return the ground-truth label depending on task."""
         if self.task == "gene_to_celltype":
             if "cell_type" in self.adata.obs.columns:
                 ct = self.adata.obs["cell_type"].iloc[idx]
-                cats = self.adata.obs["cell_type"].cat.categories if hasattr(
-                    self.adata.obs["cell_type"], "cat"
-                ) else sorted(self.adata.obs["cell_type"].unique())
-                return torch.tensor(list(cats).index(ct), dtype=torch.long)
+                col = self.adata.obs["cell_type"]
+                # BUG FIX: categorical columns expose .cat.categories; object
+                # columns use .unique().  Both must be cast to a plain list
+                # before calling .index() — Categorical.tolist() is safe.
+                if hasattr(col, "cat"):
+                    cats = col.cat.categories.tolist()
+                else:
+                    cats = sorted(col.dropna().unique().tolist())
+                return torch.tensor(cats.index(ct), dtype=torch.long)
         elif self.task == "graph_to_domain":
             if "domain" in self.adata.obs.columns:
                 d = self.adata.obs["domain"].iloc[idx]
-                domains = sorted(self.adata.obs["domain"].unique())
+                col = self.adata.obs["domain"]
+                # BUG FIX: same categorical safety fix as above
+                if hasattr(col, "cat"):
+                    domains = col.cat.categories.tolist()
+                else:
+                    domains = sorted(col.dropna().unique().tolist())
                 return torch.tensor(domains.index(d), dtype=torch.long)
         return None
 
@@ -181,7 +199,7 @@ def create_visium_dataloaders(
     batch_size: int = 32,
     val_split: float = 0.1,
     test_split: float = 0.1,
-    num_workers: int = 4,
+    num_workers: Optional[int] = None,
     seed: int = 42,
     **dataset_kwargs,
 ) -> Tuple[torch.utils.data.DataLoader, ...]:
@@ -194,28 +212,51 @@ def create_visium_dataloaders(
     """
     from torch.utils.data import random_split, DataLoader
 
+    # BUG FIX: num_workers > 0 causes BrokenPipeError on Windows due to
+    # lack of os.fork(). Default to 0 on Windows, 4 on Linux/Mac.
+    if num_workers is None:
+        num_workers = 0 if platform.system() == "Windows" else 4
+
     dataset = VisiumDataset(adata, task=task, **dataset_kwargs)
     n = len(dataset)
     n_test = int(n * test_split)
     n_val = int(n * val_split)
     n_train = n - n_val - n_test
 
+    if n_train <= 0:
+        raise ValueError(
+            f"Dataset too small ({n} spots) for the requested split ratios. "
+            "Reduce val_split / test_split or increase the dataset size."
+        )
+
     generator = torch.Generator().manual_seed(seed)
     train_ds, val_ds, test_ds = random_split(dataset, [n_train, n_val, n_test], generator=generator)
 
-    def collate(batch):
-        out = {}
-        for key in batch[0]:
-            vals = [b[key] for b in batch]
+    def collate(batch: List[Dict]) -> Dict:
+        """Safe collate that handles optional/None fields gracefully."""
+        out: Dict = {}
+        all_keys = {k for item in batch for k in item.keys()}
+        for key in all_keys:
+            vals = [item.get(key) for item in batch]
+            # BUG FIX: skip keys where ANY value is None (optional labels)
+            if any(v is None for v in vals):
+                continue
             if isinstance(vals[0], torch.Tensor):
                 out[key] = torch.stack(vals)
             else:
                 out[key] = vals
         return out
 
-    dl_kwargs = dict(batch_size=batch_size, num_workers=num_workers, collate_fn=collate, pin_memory=True)
+    # pin_memory only beneficial when CUDA is available
+    pin = torch.cuda.is_available()
+    dl_kwargs = dict(
+        batch_size=batch_size,
+        num_workers=num_workers,
+        collate_fn=collate,
+        pin_memory=pin,
+    )
     return (
-        torch.utils.data.DataLoader(train_ds, shuffle=True, **dl_kwargs),
-        torch.utils.data.DataLoader(val_ds, shuffle=False, **dl_kwargs),
-        torch.utils.data.DataLoader(test_ds, shuffle=False, **dl_kwargs),
+        DataLoader(train_ds, shuffle=True, **dl_kwargs),
+        DataLoader(val_ds, shuffle=False, **dl_kwargs),
+        DataLoader(test_ds, shuffle=False, **dl_kwargs),
     )

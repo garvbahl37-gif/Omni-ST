@@ -15,7 +15,7 @@ Steps:
 from __future__ import annotations
 
 import warnings
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import anndata as ad
 import numpy as np
@@ -102,19 +102,34 @@ def select_hvgs(
 
     Parameters
     ----------
-    adata : AnnData  (must be log-normalized for Seurat, raw counts for v3)
+    adata : AnnData
     n_top_genes : int
     flavor : str  ``"seurat"``, ``"seurat_v3"``, or ``"cell_ranger"``
+        Note: ``"seurat_v3"`` requires raw counts in ``.X``.
+        This function temporarily swaps ``.X`` with raw counts from
+        ``layers["counts"]`` (if available) and restores afterwards.
     batch_key : str | None  correct for batch when selecting HVGs
     """
+    # BUG FIX: seurat_v3 requires raw counts, not log-normalised values.
+    # We temporarily swap .X so scanpy sees the counts, then restore.
+    log_norm_X = None
+    if flavor == "seurat_v3" and "counts" in adata.layers:
+        log_norm_X = adata.X.copy()
+        adata.X = adata.layers["counts"]
+
     sc.pp.highly_variable_genes(
         adata,
-        n_top_genes=n_top_genes,
+        n_top_genes=min(n_top_genes, adata.n_vars),  # clamp to available genes
         flavor=flavor,
         batch_key=batch_key,
         inplace=inplace,
         subset=False,
     )
+
+    # Restore log-normalised expression
+    if log_norm_X is not None:
+        adata.X = log_norm_X
+
     print(f"HVG selection: {adata.var['highly_variable'].sum()} HVGs selected from {adata.n_vars}")
     return adata
 
@@ -128,12 +143,18 @@ def compute_pca(
     PCA on HVG-subset of log-normalized data.
     Result stored in ``adata.obsm["X_pca"]``.
     """
+    # BUG FIX: n_comps must be < min(n_obs, n_vars_used); clamp to avoid crash.
+    n_hvgs = int(adata.var["highly_variable"].sum()) if (hvg_only and "highly_variable" in adata.var.columns) else adata.n_vars
+    safe_comps = max(2, min(n_comps, adata.n_obs - 1, n_hvgs - 1))
+    if safe_comps != n_comps:
+        warnings.warn(f"Reduced PCA components from {n_comps} to {safe_comps} (limited by data size).")
+
     if hvg_only and "highly_variable" in adata.var.columns:
-        sc.pp.pca(adata, n_comps=n_comps, use_highly_variable=True)
+        sc.pp.pca(adata, n_comps=safe_comps, use_highly_variable=True)
     else:
         sc.pp.scale(adata, max_value=10)
-        sc.pp.pca(adata, n_comps=n_comps)
-    print(f"PCA: computed {n_comps} components")
+        sc.pp.pca(adata, n_comps=safe_comps)
+    print(f"PCA: computed {safe_comps} components")
     return adata
 
 
